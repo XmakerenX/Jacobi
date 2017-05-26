@@ -417,8 +417,14 @@ void jacobiNeoMkl(matrix& S, double e[N], matrix& E)
         Qij[l][k] = -s;
         Qij[k][l] = s;
 
-//        printMatrix(Qij);
-//        std::cout << "\n";
+        //if (k == 0 && l == 4)
+        {
+          //  printMatrix(Qij);
+            //std::cout << "\n";
+//            Qij[l][k] = -s;
+//            Qij[k][l] = s;
+        }
+
 
         cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
                      N, N, N, 1.0, Qij.arr, N, S.arr, N, 0.0, S.arr, N);
@@ -426,9 +432,15 @@ void jacobiNeoMkl(matrix& S, double e[N], matrix& E)
         cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
                      N, N, N, 1.0, S.arr, N, Qij.arr, N, 0.0, S.arr, N);
 
+//        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+//                     N, N, N, 1.0, Qij.arr, N, S.arr, N, 0.0, S.arr, N);
 
-        S[k][l] = 0.0;
-        S[l][k] = 0.0;
+//        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
+//                     N, N, N, 1.0, S.arr, N, Qij.arr, N, 0.0, S.arr, N);
+
+
+//        S[k][l] = 0.0;
+//        S[l][k] = 0.0;
 
         //Restore Qij to being I matrixs
         Qij[k][k] = 1;
@@ -780,6 +792,7 @@ void jacobi(matrix& S, double e[N], matrix& E)
 
     int* ind = new int[N];
     bool* changed = new bool[N];
+    double* e2 = new double[N];
 
     int count = 0;
 
@@ -886,6 +899,35 @@ void jacobi(matrix& S, double e[N], matrix& E)
         for (int i = l + 1; i < N; i++)
         {
             rotate(S,k,i,l,i, c, s);
+        }
+
+
+//        for (int i = 0; i < N; i++)
+//        {
+//            e2[i] = e[i];
+//        }
+
+//        bool swapped = false;
+//        do
+//        {
+//            swapped = false;
+//            for (int i = 1; i < N; i++)
+//            {
+//                if (e2[i-1] > e2[i])
+//                {
+//                    double temp = e2[i -1];
+//                    e2[i - 1] = e2[i];
+//                    e2[i] = temp;
+//                    swapped = true;
+//                }
+//            }
+//        } while (swapped);
+
+        for (int i = 0; i < N; i++)
+        {
+            std::cout << "e" << i+1 << " = " << e[i] << "\n";
+
+            std::cout << "\n\n";
         }
 
 //        std::cout <<"---------------------------------------------\n";
