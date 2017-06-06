@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 #include <fstream>
-#include<sys/time.h>
+#include <sys/time.h>
 #include <pthread.h>
 #include <unistd.h>
 #include <signal.h>
@@ -13,14 +13,17 @@
 #include <stdlib.h>     /* srand, rand */
 #include <time.h>       /* time */
 
-//#include <math.h>
-
 #include<mkl.h>
 
-#define N 6
+#define N 500
 
 typedef void* (*THREADFUNC )(void* args );
+// if to print current results
+bool print = false;
 
+//-----------------------------------------------------------------------------
+// matrix Class
+//-----------------------------------------------------------------------------
 struct matrix
 {
     double* arr;
@@ -46,6 +49,9 @@ struct matrix
 
 };
 
+//-----------------------------------------------------------------------------
+// Thread Class
+//-----------------------------------------------------------------------------
 struct Thread
 {
     Thread (matrix& S, matrix& E, int* ind, int& k, int& l, double& c, double& s, THREADFUNC func)
@@ -97,7 +103,109 @@ struct Thread
 
 };
 
-bool print = false;
+struct matrixPoint
+{
+    matrixPoint(int newK, int newL)
+    {
+        k = newK;
+        l = newL;
+    }
+
+    int k;
+    int l;
+};
+
+struct Kpairs
+{
+    Kpairs(std::vector<matrixPoint> newMatrixPoints)
+        :matrixPoints(newMatrixPoints)
+    {
+        ;
+    }
+
+    std::vector<matrixPoint> matrixPoints;
+};
+
+//-----------------------------------------------------------------------------
+// Name : genrateMartixPoints ()
+// Desc : generate Martrix pairs to iterate on
+//-----------------------------------------------------------------------------
+std::vector<Kpairs> genrateMartixPoints(int n)
+{
+    int m = (n + 1)/2;
+
+    int q,p;
+    int c = 1;
+    std::vector<matrixPoint> vecPoints;
+    std::vector<Kpairs> vecKPairs;
+
+    for (int k = 1; k <= m - 1; k++)
+    {
+        for (int c = 1; (c + m) <= n; c++)
+        {
+            q = m - k + c;
+
+            if ( ((m - k + 1) <= q) &&  (q <= (2*m - 2*k)) )
+            {
+                p = (2*m - 2*k + 1) - q;
+            }
+            else
+                if ( (2*m - 2*k < q) && (q <= (2*m - k - 1)) )
+                {
+                    p = (4*m - 2*k ) - q;
+                }
+                else
+                    if ( (2*m - k - 1) < q)
+                        p = n;
+
+
+            if (p > q)
+            {
+                int temp = q;
+                q  = p;
+                p = temp;
+            }
+
+            vecPoints.push_back( matrixPoint(p - 1 , q - 1) );
+            //std::cout << "(" << p << ", " << q <<  ")\n";
+        }
+        vecKPairs.push_back(Kpairs(vecPoints) );
+        vecPoints.clear();
+    }
+
+    for (int k = m; k <= (2*m - 1); k++)
+    {
+
+        for (int c = 0; c < (n -m); c++)
+        {
+            q = 4*m - n -k + c;
+
+            if (( q < (2*m - k + 1)) )
+                p = n;
+            else
+                if ( ((2*m - k + 1) <= q) &&  (q <=(4*m - 2*k - 1)) )
+                    p = ((4*m - 2*k) - q);
+                else
+                    if ((4*m - 2*k - 1 )< q)
+                        p = (6*m - 2*k -1) - q;
+
+            if (p > q)
+            {
+                int temp = q;
+                q  = p;
+                p = temp;
+            }
+
+            vecPoints.push_back( matrixPoint(p - 1 , q - 1) );
+            //std::cout << "(" << p << ", " << q <<  ")\n";
+        }
+        vecKPairs.push_back(Kpairs(vecPoints) );
+        vecPoints.clear();
+    }
+
+    return vecKPairs;
+
+}
 
 //-----------------------------------------------------------------------------
 // Name : sigStop ()
@@ -206,7 +314,7 @@ bool toIterate(matrix& S, double& exp)
 ////            }
 //        }
     }
-    std::cout << "sum = " << std::sqrt(sum) << "\n";
+    //std::cout << "sum = " << std::sqrt(sum) << "\n";
 
 //    for (int i = 0; i < N; i++)
 //        std::cout << S[i][i] << " ";
@@ -311,7 +419,7 @@ void* threadMaxind(void* arg)
 //-----------------------------------------------------------------------------
 // Name : jacobiNeoMkl ()
 //-----------------------------------------------------------------------------
-void jacobiNeoMkl(matrix& S, double e[N], matrix& E)
+void jacobiNeoMkl(matrix& S, double e[N], matrix& E, std::vector<Kpairs>& kPairs)
 {
     int i,k,l,m;
     double s,c,t,p,y,d,r,g;
@@ -326,6 +434,126 @@ void jacobiNeoMkl(matrix& S, double e[N], matrix& E)
     double time3;
 
     matrix Qij;
+    matrix temp;
+
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < N; j++)
+            Qij[i][j] = 0;
+
+    // E = I
+    for (int i = 0; i < N; i++)
+        Qij[i][i] = 1;
+
+    esp = calcSum(S) * 0.001;
+
+    k = 0;
+    l = 1;
+
+    bool end = true;
+
+    while (toIterate(S, esp))
+    //while(end)
+    {
+
+        for (int i = 0; i <kPairs.size(); i++)
+        {
+            Kpairs pair = kPairs[i];
+
+            //std::cout << "count = " << count << "\n";
+//            if (count == 3992)
+//            {
+//                std::cout << "ending by count\n";
+//                end = false;
+//                break;
+//            }
+
+            for (int j = 0; j < pair.matrixPoints.size(); j++)
+            {
+                k = pair.matrixPoints[j].k;
+                l = pair.matrixPoints[j].l;
+
+                p = S[k][l];
+
+                // calculate c = cos o, s = sin o<
+                double pp = p*p;
+                //std::cout << "(e[l] - e[k]) / 2 =" << (e[l] - e[k]) / 2 << "\n";
+                y =  ( S[l][l] - S[k][k] ) / 2;
+                d = std::abs(y) + std::sqrt(pp + y*y);
+                r = std::sqrt(pp + d*d);
+                c = d / r;
+                s = p / r;
+                t = pp / d;
+
+                if ( y < 0)
+                {
+                    s = -s;
+                    t = -t;
+                }
+
+                Qij[k][k] = c;
+                Qij[l][l] = c;
+                Qij[l][k] = -s;
+                Qij[k][l] = s;
+            }
+
+//            cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
+//                         N, N, N, 1.0, Qij.arr, N, S.arr, N, 0.0, S.arr, N);
+
+//            cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+//                         N, N, N, 1.0, S.arr, N, Qij.arr, N, 0.0, S.arr, N);
+
+            time1 = getTime();
+            cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
+                         N, N, N, 1.0, Qij.arr, N, S.arr, N, 0.0, temp.arr, N);
+
+            cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+                         N, N, N, 1.0, temp.arr, N, Qij.arr, N, 0.0, S.arr, N);
+
+            time2 += getTime() - time1;
+
+            for (int j = 0; j < pair.matrixPoints.size(); j++)
+            {
+                k = pair.matrixPoints[j].k;
+                l = pair.matrixPoints[j].l;
+
+                Qij[k][k] = 1;
+                Qij[l][l] = 1;
+                Qij[l][k] = 0;
+                Qij[k][l] = 0;
+            }
+
+            count++;
+        }
+    }
+
+    for (int i = 0; i < N; i++)
+    {
+        e[i] = S[i][i];
+    }
+
+   std::cout << "count = "<< count << "\n\n";
+   std::cout << "time2 = "<< time2 << "\n\n";
+}
+
+//-----------------------------------------------------------------------------
+// Name : jacobiMkl ()
+//-----------------------------------------------------------------------------
+void jacobiMkl(matrix& S, double e[N], matrix& E)
+{
+    int i,k,l,m;
+    double s,c,t,p,y,d,r,g;
+
+    double esp;
+    int sweepNum = (N * (N - 1)) / 2;
+
+    int count = 0;
+
+    double time1;
+    double time2 = 0;
+    double time3;
+
+    matrix Qij;
+    matrix temp;
 
     for (int i = 0; i < N; i++)
         for (int j = 0; j < N; j++)
@@ -346,47 +574,17 @@ void jacobiNeoMkl(matrix& S, double e[N], matrix& E)
 
         //std::cout << "k = "<< k << " l = "<< l <<  "\n";
 
-        if (count == 45*45)
-            break;
+//        if (count == 45*45)
+//            break;
 
-        printMatrix(S);
-        std::cout <<"\n";
+//        printMatrix(S);
+//        std::cout <<"\n";
 
-        std::cout << "S[k][k] = " << S[k][k] << "\n";
-        std::cout << "S[l][l] = " << S[l][l] << "\n";
-        std::cout << "S[k][l] = " << S[k][l] << "\n";
+//        std::cout << "S[k][k] = " << S[k][k] << "\n";
+//        std::cout << "S[l][l] = " << S[l][l] << "\n";
+//        std::cout << "S[k][l] = " << S[k][l] << "\n";
 
-        g = 100.0*std::abs(S[k][l]);
-        //y = (S[l][l] - S[k][k]) / (2 * S[k][l]);
-        //y = 0.5 * (S[l][l] - S[k][k]) / (S[k][l]);
-        //else
-        {
-
-//        y = 0.5 * (S[k][k] - S[l][l]) / (S[k][l]);
-
-//        double h = S[k][k] - S[l][l];
-
-//        t = 1 / (std::abs(y) + std::sqrt(1 + y*y));
-//        if (y < 0)
-//            t = -t;
-////        double t1 = -y + std::sqrt(1 + y*y);
-////        double t2 = -y - std::sqrt(1 + y*y);
-
-////        if (std::abs(t1) < std::abs(t2))
-////        {
-////            std::cout << "t1\n";
-////            t = t1;
-////        }
-////        else
-////        {
-////            std::cout << "t2\n";
-////            t = t2;
-////        }
-
-
-//        c = 1 / (std::sqrt(1 + t*t) );
-
-//        s = c * t;
+        //g = 100.0*std::abs(S[k][l]);
 
         p = S[k][l];
 
@@ -406,316 +604,31 @@ void jacobiNeoMkl(matrix& S, double e[N], matrix& E)
             t = -t;
         }
 
-        std::cout << "g = " << g << "\n";
-        std::cout << "y = " << y << "\n";
-        std::cout << "t = " << t << "\n";
-        std::cout << "c = " << c << "\n";
-        std::cout << "s = " << s << "\n";
-
-        Qij[k][k] = c;
-        Qij[l][l] = c;
-        Qij[l][k] = -s;
-        Qij[k][l] = s;
-
-        //if (k == 0 && l == 4)
-        {
-          //  printMatrix(Qij);
-            //std::cout << "\n";
-//            Qij[l][k] = -s;
-//            Qij[k][l] = s;
-        }
-
-
-        cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
-                     N, N, N, 1.0, Qij.arr, N, S.arr, N, 0.0, S.arr, N);
-
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
-                     N, N, N, 1.0, S.arr, N, Qij.arr, N, 0.0, S.arr, N);
-
-//        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
-//                     N, N, N, 1.0, Qij.arr, N, S.arr, N, 0.0, S.arr, N);
-
-//        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
-//                     N, N, N, 1.0, S.arr, N, Qij.arr, N, 0.0, S.arr, N);
-
-
-//        S[k][l] = 0.0;
-//        S[l][k] = 0.0;
-
-        //Restore Qij to being I matrixs
-        Qij[k][k] = 1;
-        Qij[l][l] = 1;
-        Qij[l][k] = 0;
-        Qij[k][l] = 0;
-
-        }
-
-        std::cout << "k = "<< k << " l = "<< l <<  "\n";
-
-        if ( (k < N - 2) && l < N - 1)
-        {
-            k = k;
-            l = l +1;
-        }
-        else
-        {
-            if (k < N - 2 && l == N - 1)
-            {
-                int temp = k;
-                k = temp + 1;
-                l = temp + 2;
-            }
-            else
-            {
-                if ( (k == N - 2) && (l == N - 1))
-                {
-                    k = 0;
-                    l = 1;
-                }
-                else
-                    std::cout <<"Error no condition was entered\n";
-            }
-        }
-
-        count++;
-
-    }
-
-    for (int i = 0; i < N; i++)
-    {
-        e[i] = S[i][i];
-    }
-
-   std::cout << "count = "<< count << "\n\n";
-   std::cout << "time2 = "<< time2 << "\n\n";
-}
-
-//-----------------------------------------------------------------------------
-// Name : jacobiMkl ()
-//-----------------------------------------------------------------------------
-void jacobiMkl(matrix& S, double e[N], matrix& E)
-{
-    int i,k,l,m;
-    double s,c,t,p,y,d,r;
-
-    double esp;
-    int sweepNum = (N * (N - 1)) / 2;
-
-    matrix Qij;
-
-    int state = N;
-
-    int* ind = new int[N];
-    bool* changed = new bool[N];
-
-    int count = 0;
-
-    double time1;
-    double time2 = 0;
-    double time3;
-
-    for (int i = 0; i < N; i++)
-        for (int j = 0; j < N; j++)
-            E[i][j] = 0;
-
-    // E = I
-    for (int i = 0; i < N; i++)
-        E[i][i] = 1;
-
-    for (int i = 0; i < N; i++)
-        for (int j = 0; j < N; j++)
-        {
-            Qij[i][j] = E[i][j];
-        }
-
-//    for (int k = 0; k < N; k++)
-//    {
-//        e[k] = S[k][k];
-//        changed[k] = true;
-//    }
-
-    esp = calcSum(S) * 0.0001;
-
-    std::cout << "esp = " << esp << "\n";
-
-    k = 0;
-    l = 1;
-
-    while (toIterate(S, esp))
-    {
-//        m = 0;
-//        for (k = 1; k < N-1; k++)
-//        {
-//            if (std::abs(S[k][ind[k]]) > std::abs(S[m][ind[m]]) )
-//            {
-//                m = k;
-//            }
-//        }
-
-//        k = m;
-//        l = ind[m];
-
-
-        for (int j = 0; j < sweepNum; j++)
-        {
-            if (count == 1300)
-                break;
-
-            if (print)
-            {
-
-                for (int i = 0; i < N; i++)
-                {
-                    e[i] = S[i][i];
-                }
-
-                bool swapped = false;
-                do
-                {
-                    swapped = false;
-                    for (int i = 1; i < N; i++)
-                    {
-                        if (e[i-1] > e[i])
-                        {
-                            double temp = e[i -1];
-                            e[i - 1] = e[i];
-                            e[i] = temp;
-                            swapped = true;
-                        }
-                    }
-                } while (swapped);
-
-                for (int i = 0; i < N; i++)
-                {
-                    std::cout << "e" << i+1 << " = " << e[i] << "\n\n";
-
-                    std::cout << "\n\n";
-                }
-
-                print = false;
-            }
-
-            double delta = esp / sweepNum;
-            if (delta <= std::sqrt ((S[k][l] * S[k][l]) + (S[l][k] * S[l][k])))
-            {
-        //std::cout << "k = " << k << "\n";
-        //std::cout << "l = " << l << "\n";
-        //double beta = (S[k][k] - S[l][l]) / (2 * S[k][l]);
-        //double beta = (S[k][k] - S[l][l]) / (2 * S[k][l]);
-       // double beta = (S[l][l] - S[k][k]) / (2 * S[k][l]);
-
-//        double cot;
-//        double cot1 = beta - std::sqrt((beta* beta) + 1);
-//        double cot2 = beta + std::sqrt((beta* beta) + 1);
-
-//        if (std::abs(cot1) > std::abs(cot2))
-//            cot = cot1;
-//        else
-//            cot = cot2;
-
-//        std::cout << "beta = " << beta << "\n";
+//        std::cout << "g = " << g << "\n";
+//        std::cout << "y = " << y << "\n";
 //        std::cout << "t = " << t << "\n";
-
-//        std::cout << "beta = " << beta << "\n";
-//        std::cout << "cot = " << cot << "\n";
-
-//        s = 1 / (std::sqrt(cot * cot + 1));
-//        c = s * cot;
-
-//        y = (S[l][l] - S[k][k]) / (2 * S[k][l]);
-//        if (y > 0)
-//        {
-//            t = -y + std::sqrt(y*y + 1);
-//        }
-//        else
-//        {
-//            t = -y - std::sqrt(y*y + 1);
-//        }
-
-//        c = 1 / std::sqrt(1 + t*t);
-//        s = c * t;
-
-          //y = (-2 * S[k][l] ) / (S[l][l]- S[k][k]);
-          y = (S[l][l]- S[k][k]) / (-2 * S[k][l] );
-          if (y > 0)
-              t = 1 / (std::abs(y) + std::sqrt(1 + y*y));
-          else
-              t = -1 / (std::abs(y) + std::sqrt(1 + y*y));
-
-          c = 1 / std::sqrt(1 + t*t);
-          s = c * t;
-
-
-//        p = S[k][l];
-
-//        // calculate c = cos o, s = sin o
-//        double pp = p*p;
-//        y =  ( S[l][l] - S[k][k] ) / 2;
-//        d = std::abs(y) + std::sqrt(pp + y*y);
-//        r = std::sqrt(pp + d*d);
-//        c = d / r;
-//        s = p / r;
-//        t = pp / d;
-
-//        if ( y < 0)
-//        {
-//            s = -s;
-//            t = -t;
-//        }
-
-//          std::cout << "c = " << c << "\n";
-//          std::cout << "s = " << s << "\n";
-//          std::cout << "l = " << l << "\n";
-//          std::cout << "k = " << k << "\n";
-
-//        if (l > k)
-//        {
-//            s = -s;
-//        }
+//        std::cout << "c = " << c << "\n";
+//        std::cout << "s = " << s << "\n";
 
         Qij[k][k] = c;
         Qij[l][l] = c;
         Qij[l][k] = -s;
         Qij[k][l] = s;
 
+//        printMatrix(Qij);
+//        std::cout << "\n";
 
-        cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
-                     N, N, N, 1.0, Qij.arr, N, S.arr, N, 0.0, S.arr, N);
-
-        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
-                     N, N, N, 1.0, S.arr, N, Qij.arr, N, 0.0, S.arr, N);
-
-        //time1 = getTime();
-        // S = Qij * S
-//        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+//        cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
 //                     N, N, N, 1.0, Qij.arr, N, S.arr, N, 0.0, S.arr, N);
 
-//        // S = S * (Qij)^T
-//        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
+//        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
 //                     N, N, N, 1.0, S.arr, N, Qij.arr, N, 0.0, S.arr, N);
 
+        cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
+                     N, N, N, 1.0, Qij.arr, N, S.arr, N, 0.0, temp.arr, N);
 
-        //std::cout << "time1 = " << getTime() - time1 << "\n";
-//        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasTrans,
-//                     N, N, N, 1.0, S.arr, N, Qij.arr, N, 0.0, S.arr, N);
-
-//        for (int i = 0; i < N; i++)
-//        {
-//            for (int j = 0; j < N; j++)
-//                std::cout << Qij[i][j] << " ";
-
-//            std::cout << "\n";
-//        }
-
-//        std::cout <<"###################################\n";
-//        for (int i = 0; i < N; i++)
-//        {
-//            for (int j = 0; j < N; j++)
-//                std::cout << Qij[i][j] << " ";
-
-//            std::cout << "\n";
-//        }
-//        std::cout <<"###################################\n";
+        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
+                     N, N, N, 1.0, temp.arr, N, Qij.arr, N, 0.0, S.arr, N);
 
         //Restore Qij to being I matrixs
         Qij[k][k] = 1;
@@ -723,21 +636,10 @@ void jacobiMkl(matrix& S, double e[N], matrix& E)
         Qij[l][k] = 0;
         Qij[k][l] = 0;
 
-        //S[k][l] = 0;
-//        std::cout <<"-----------------------------------\n";
-//        for (int i = 0; i < N; i++)
-//        {
-//            for (int j = 0; j < N; j++)
-//                std::cout << S[i][j] << "\t";
 
-//            std::cout << "\n";
-//        }
 
-//        std::cout <<"-----------------------------------\n";
+        //std::cout << "k = "<< k << " l = "<< l <<  "\n";
 
-        //ind[k] =  maxind(S,k);
-        //ind[l] =  maxind(S,l);
-        }
         if ( (k < N - 2) && l < N - 1)
         {
             k = k;
@@ -763,18 +665,14 @@ void jacobiMkl(matrix& S, double e[N], matrix& E)
             }
         }
 
-
         count++;
+
     }
-  }
 
     for (int i = 0; i < N; i++)
     {
         e[i] = S[i][i];
     }
-
-    delete[] ind;
-    delete[] changed;
 
    std::cout << "count = "<< count << "\n\n";
    std::cout << "time2 = "<< time2 << "\n\n";
@@ -820,49 +718,21 @@ void jacobi(matrix& S, double e[N], matrix& E)
 
     while (state !=  0)
     {
+        if (print)
+        {
+            toIterate(S, s);
+            print = false;
+        }
 //        if (count == 45*4)
 //            break;
 
-          printMatrix(S);
-          std::cout << "\n";
-          toIterate(S,s);
-//        m = 0;
-//        for (k = 1; k < N-1; k++)
-//        {
-//            if (std::abs(S[k][ind[k]]) > std::abs(S[m][ind[m]]) )
-//            {
-//                m = k;
-//            }
-//        }
-
-//        k = m;
-//        l = ind[m];
-
-
-
-//        std::cout << "k = " << k << " l = " << l << "\n";
-//        for (int i = 0; i < N; i++)
-//            std::cout << "ind " << i << " = "<< ind[i] << " \n";
-        //std::cout <<"\n";
-
-//        y = (S[l][l] - S[k][k]) / (2 * S[k][l]);
-//        if (y > 0)
-//        {
-//            t = -y + std::sqrt(y*y + 1);
-//        }
-//        else
-//        {
-//            t = -y - std::sqrt(y*y + 1);
-//        }
-
-//        c = 1 / std::sqrt(1 + t*t);
-//        s = c * t;
+/*         printMatrix(S);
+         std::cout << "\n"*/;
 
         p = S[k][l];
 
         // calculate c = cos o, s = sin o<
         double pp = p*p;
-        //std::cout << "(e[l] - e[k]) / 2 =" << (e[l] - e[k]) / 2 << "\n";
         y =  ( e[l] - e[k] ) / 2;
         d = std::abs(y) + std::sqrt(pp + y*y);
         r = std::sqrt(pp + d*d);
@@ -877,30 +747,49 @@ void jacobi(matrix& S, double e[N], matrix& E)
         }
 
         //std::cout << "t = " << t << "\n";
-        std::cout << "c = " << c << "\n";
-        std::cout << "s = " << s << "\n";
+        //std::cout << "c = " << c << "\n";
+        //std::cout << "s = " << s << "\n";
 
         S[k][l] = 0.0f;
 
         update(k, -t, state, e, changed);
         update(l, t, state, e, changed);
 
+        //std::cout << "k = " << k << " l = " << l << "\n";
+
+        //std::cout << "Start: for (int i = 0; i < k; i++) \n";
         // rotate rows and columns k and l
         for (int i = 0; i < k; i++)
         {
+            //std::cout << "("<< i << ", " << k << ")\n";
+            //std::cout << "("<< i << ", " << l << ")\n";
             rotate(S,i,k,i,l, c, s);
         }
 
+        //std::cout << "End: for (int i = 0; i < k; i++) \n";
+
+        //std::cout << "Start: for (int i = k +1; i < l; i++)\n";
+
         for (int i = k +1; i < l; i++)
         {
+            //std::cout << "("<< k << ", " << i << ")\n";
+            //std::cout << "("<< i << ", " << l << ")\n";
             rotate(S,k,i,i,l, c, s);
         }
 
+        //std::cout << "End: for (int i = k +1; i < l; i++)\n";
+
+        //std::cout << "Start: for (int i = l + 1; i < N; i++)\n";
+
         for (int i = l + 1; i < N; i++)
         {
+            //std::cout << "("<< k << ", " << i << ")\n";
+            //std::cout << "("<< l << ", " << i << ")\n";
             rotate(S,k,i,l,i, c, s);
         }
 
+
+        //std::cout << "End: for (int i = l + 1; i < N; i++)\n";
 
 //        for (int i = 0; i < N; i++)
 //        {
@@ -923,12 +812,12 @@ void jacobi(matrix& S, double e[N], matrix& E)
 //            }
 //        } while (swapped);
 
-        for (int i = 0; i < N; i++)
-        {
-            std::cout << "e" << i+1 << " = " << e[i] << "\n";
+//        for (int i = 0; i < N; i++)
+//        {
+//            std::cout << "e" << i+1 << " = " << e[i] << "\n";
 
-            std::cout << "\n\n";
-        }
+//            std::cout << "\n\n";
+//        }
 
 //        std::cout <<"---------------------------------------------\n";
 //        printMatrix(S);
@@ -951,7 +840,7 @@ void jacobi(matrix& S, double e[N], matrix& E)
         //ind[k] =  maxind(S,k);
         //ind[l] =  maxind(S,l);
 
-        std::cout << "k = "<< k << " l = " << l << "\n";
+        //std::cout << "k = "<< k << " l = " << l << "\n";
 
         if ( (k < N - 2) && l < N - 1)
         {
@@ -986,6 +875,108 @@ void jacobi(matrix& S, double e[N], matrix& E)
 
    std::cout << "count = "<< count << "\n\n";
    std::cout << "time2 = "<< time2 << "\n\n";
+}
+
+//-----------------------------------------------------------------------------
+// Name : neoJacobi ()
+//-----------------------------------------------------------------------------
+void neoJacobi(matrix& S, double e[N], matrix& E, std::vector<Kpairs>& kPairs)
+{
+    int i,k,l,m;
+    double s,c,t,p,y,d,r;
+
+    int state = N;
+
+    int* ind = new int[N];
+    bool* changed = new bool[N];
+
+    int count = 0;
+
+    double time1;
+    double time2 = 0;
+    double time3;
+
+    for (int i = 0; i < N; i++)
+        for (int j = 0; j < N; j++)
+            E[i][j] = 0;
+
+    // E = I
+    for (int i = 0; i < N; i++)
+        E[i][i] = 1;
+
+    for (int k = 0; k < N; k++)
+    {
+        e[k] = S[k][k];
+        changed[k] = true;
+    }
+
+    while (state !=  0)
+    {
+//        if (count == 45*4)
+//            break;
+
+        for (int i = 0; i < kPairs.size(); i++)
+        {
+            Kpairs pair = kPairs[i];
+            for (int j = 0; j < pair.matrixPoints.size(); j++)
+            {
+                k = pair.matrixPoints[j].k;
+                l = pair.matrixPoints[j].l;
+
+                p = S[k][l];
+
+                // calculate c = cos o, s = sin o<
+                double pp = p*p;
+                y =  ( e[l] - e[k] ) / 2;
+                d = std::abs(y) + std::sqrt(pp + y*y);
+                r = std::sqrt(pp + d*d);
+                c = d / r;
+                s = p / r;
+                t = pp / d;
+
+                if ( y < 0)
+                {
+                    s = -s;
+                    t = -t;
+                }
+
+                //std::cout << "t = " << t << "\n";
+                std::cout << "c = " << c << "\n";
+                std::cout << "s = " << s << "\n";
+
+                S[k][l] = 0.0f;
+
+                update(k, -t, state, e, changed);
+                update(l, t, state, e, changed);
+
+                // rotate rows and columns k and l
+                for (int i = 0; i < k; i++)
+                {
+                    rotate(S,i,k,i,l, c, s);
+                }
+
+                for (int i = k +1; i < l; i++)
+                {
+                    rotate(S,k,i,i,l, c, s);
+                }
+
+                for (int i = l + 1; i < N; i++)
+                {
+                    rotate(S,k,i,l,i, c, s);
+                }
+            }
+        }
+
+        count++;
+    }
+
+    delete[] ind;
+    delete[] changed;
+
+   std::cout << "count = "<< count << "\n\n";
+   std::cout << "time2 = "<< time2 << "\n\n";
+
+
 }
 
 //-----------------------------------------------------------------------------
@@ -1086,16 +1077,51 @@ int main(int argc, char *argv[])
 //    mat[3][2] = -1050;
 //    mat[3][3] = 700;
 
-    //if (readMatrixFromFile(mat, "5002.txt") == false)
     //if (readMatrixFromFile(mat, "myMat2.txt") == false)
     //if (readMatrixFromFile(mat, "424.txt") == false)
     //if (readMatrixFromFile(mat, "500b.txt") == false)
     //if (readMatrixFromFile(mat, "102b.txt") == false)
     //if (readMatrixFromFile(mat, "222.txt") == false)
-    if (readMatrixFromFile(mat, "6b.txt") == false)
+    //if (readMatrixFromFile(mat, "6b.txt") == false)
+    //if (readMatrixFromFile(mat, "5002.txt") == false)
+    //if (readMatrixFromFile(mat, "100b.txt") == false)
+    //if (readMatrixFromFile(mat, "5000d.txt") == false)
+    //if (readMatrixFromFile(mat, "3000b.txt") == false)
+    //if (readMatrixFromFile(mat, "2500b.txt") == false)
+    //if (readMatrixFromFile(mat, "2000b.txt") == false)
+    //if (readMatrixFromFile(mat, "1500b.txt") == false)
+    //if (readMatrixFromFile(mat, "1000b.txt") == false)
+    //if (readMatrixFromFile(mat, "900b.txt") == false)
+    //if (readMatrixFromFile(mat, "800b.txt") == false)
+    if (readMatrixFromFile(mat, "500d.txt") == false)
+    //if (readMatrixFromFile(mat, "450b.txt") == false)
+    //if (readMatrixFromFile(mat, "400b.txt") == false)
+    //if (readMatrixFromFile(mat, "395b.txt") == false)
+    //if (readMatrixFromFile(mat, "390b.txt") == false)
+    //if (readMatrixFromFile(mat, "375b.txt") == false)
+    //if (readMatrixFromFile(mat, "350b.txt") == false)
+    //if (readMatrixFromFile(mat, "300b.txt") == false)
+    //if (readMatrixFromFile(mat, "200b.txt") == false)
+    //if (readMatrixFromFile(mat, "150b.txt") == false)
+    //if (readMatrixFromFile(mat, "125b.txt") == false)
+    //if (readMatrixFromFile(mat, "105b.txt") == false)
+    //if (readMatrixFromFile(mat, "101b.txt") == false)
     {
         return 1;
     }
+
+    std::vector<Kpairs> kPairs = genrateMartixPoints(N);
+
+//    for (int i = 0; i < kPairs.size(); i++)
+//    {
+//        std::vector<matrixPoint>& matrixPoints = kPairs[i].matrixPoints;
+
+//        for (int j = 0; j < matrixPoints.size(); j++)
+//        {
+//            std::cout << matrixPoints[j].k << " " <<  matrixPoints[j].l << "\n";
+//        }
+//        std::cout<<"---------------------\n";
+//    }
 
 //    for (int i = 0; i < N; i++)
 //    {
@@ -1115,9 +1141,10 @@ int main(int argc, char *argv[])
 
     double t = getTime();
 
-    jacobiNeoMkl(mat, e, E);
+    jacobiNeoMkl(mat, e, E,kPairs);
     //jacobiMkl(mat, e, E);
     //jacobi(mat, e, E);
+    //neoJacobi(mat, e, E, kPairs);
 
     std::cout << "Time: " << getTime () - t << "\n\n";
 
