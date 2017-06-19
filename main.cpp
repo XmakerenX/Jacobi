@@ -15,7 +15,7 @@
 
 #include<mkl.h>
 
-#define N 500
+#define N 8
 
 typedef void* (*THREADFUNC )(void* args );
 // if to print current results
@@ -314,7 +314,7 @@ bool toIterate(matrix& S, double& exp)
 ////            }
 //        }
     }
-    //std::cout << "sum = " << std::sqrt(sum) << "\n";
+    std::cout << "sum = " << std::sqrt(sum) << "\n";
 
 //    for (int i = 0; i < N; i++)
 //        std::cout << S[i][i] << " ";
@@ -431,18 +431,25 @@ void jacobiNeoMkl(matrix& S, double e[N], matrix& E, std::vector<Kpairs>& kPairs
 
     double time1;
     double time2 = 0;
-    double time3;
+    double time3 = 0;
 
     matrix Qij;
+    matrix QijT;
     matrix temp;
 
     for (int i = 0; i < N; i++)
         for (int j = 0; j < N; j++)
-            Qij[i][j] = 0;
+        {
+            Qij[i][j] = 0;   
+            QijT[i][j] = 0;
+        }
 
     // E = I
     for (int i = 0; i < N; i++)
+    {
         Qij[i][i] = 1;
+        QijT[i][i] = 1;
+    }
 
     esp = calcSum(S) * 0.001;
 
@@ -451,13 +458,24 @@ void jacobiNeoMkl(matrix& S, double e[N], matrix& E, std::vector<Kpairs>& kPairs
 
     bool end = true;
 
-    while (toIterate(S, esp))
-    //while(end)
+    //while (toIterate(S, esp))
+    while(end)
     {
+
+        time1 = getTime();
+
+        if (!toIterate(S, esp))
+            break;
 
         for (int i = 0; i <kPairs.size(); i++)
         {
             Kpairs pair = kPairs[i];
+
+            if (print)
+            {
+                toIterate(S, s);
+                print = false;
+            }
 
             //std::cout << "count = " << count << "\n";
 //            if (count == 3992)
@@ -494,6 +512,11 @@ void jacobiNeoMkl(matrix& S, double e[N], matrix& E, std::vector<Kpairs>& kPairs
                 Qij[l][l] = c;
                 Qij[l][k] = -s;
                 Qij[k][l] = s;
+
+                QijT[k][k] = c;
+                QijT[l][l] = c;
+                QijT[k][l] = -s;
+                QijT[l][k] = s;
             }
 
 //            cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
@@ -502,14 +525,24 @@ void jacobiNeoMkl(matrix& S, double e[N], matrix& E, std::vector<Kpairs>& kPairs
 //            cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
 //                         N, N, N, 1.0, S.arr, N, Qij.arr, N, 0.0, S.arr, N);
 
-            time1 = getTime();
-            cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
-                         N, N, N, 1.0, Qij.arr, N, S.arr, N, 0.0, temp.arr, N);
+            //time1 = getTime();
+            time3 += getTime() - time1;
+//            cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
+//                         N, N, N, 1.0, Qij.arr, N, S.arr, N, 0.0, temp.arr, N);
+            cblas_dsymm(CblasRowMajor, CblasRight, CblasUpper, N, N, 1.0, S.arr, N, QijT.arr, N, 0.0, temp.arr, N );
 
             cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
                          N, N, N, 1.0, temp.arr, N, Qij.arr, N, 0.0, S.arr, N);
 
-            time2 += getTime() - time1;
+            time1 = getTime();
+            //std::cout << "11111111\n";
+            //cblas_dsymm(CblasRowMajor, CblasRight, CblasUpper, N, N, 1.0, Qij.arr, N, S.arr, N, 0.0, temp.arr, N );
+            //std::cout << "22222222\n";
+            //cblas_dsymm(CblasRowMajor, CblasLeft, CblasUpper, N, N, 1.0, temp.arr, N, QijT.arr, N, 0.0, S.arr, N );
+            //std::cout << "33333333\n";
+
+            //std::cout <<"time1 = " << getTime() - time1 << "\n";
+            //time2 += getTime() - time1;
 
             for (int j = 0; j < pair.matrixPoints.size(); j++)
             {
@@ -520,9 +553,16 @@ void jacobiNeoMkl(matrix& S, double e[N], matrix& E, std::vector<Kpairs>& kPairs
                 Qij[l][l] = 1;
                 Qij[l][k] = 0;
                 Qij[k][l] = 0;
+
+                QijT[k][k] = 1;
+                QijT[l][l] = 1;
+                QijT[l][k] = 0;
+                QijT[k][l] = 0;
             }
 
             count++;
+
+            time2 += getTime() - time1;
         }
     }
 
@@ -533,6 +573,7 @@ void jacobiNeoMkl(matrix& S, double e[N], matrix& E, std::vector<Kpairs>& kPairs
 
    std::cout << "count = "<< count << "\n\n";
    std::cout << "time2 = "<< time2 << "\n\n";
+   std::cout << "time3 = "<< time3 << "\n\n";
 }
 
 //-----------------------------------------------------------------------------
@@ -624,11 +665,14 @@ void jacobiMkl(matrix& S, double e[N], matrix& E)
 //        cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
 //                     N, N, N, 1.0, S.arr, N, Qij.arr, N, 0.0, S.arr, N);
 
+        time1 = getTime();
         cblas_dgemm(CblasRowMajor, CblasTrans, CblasNoTrans,
                      N, N, N, 1.0, Qij.arr, N, S.arr, N, 0.0, temp.arr, N);
 
         cblas_dgemm(CblasRowMajor, CblasNoTrans, CblasNoTrans,
                      N, N, N, 1.0, temp.arr, N, Qij.arr, N, 0.0, S.arr, N);
+
+        time2 += getTime() - time1;
 
         //Restore Qij to being I matrixs
         Qij[k][k] = 1;
@@ -755,14 +799,14 @@ void jacobi(matrix& S, double e[N], matrix& E)
         update(k, -t, state, e, changed);
         update(l, t, state, e, changed);
 
-        //std::cout << "k = " << k << " l = " << l << "\n";
+        std::cout << "k = " << k << " l = " << l << "\n";
 
-        //std::cout << "Start: for (int i = 0; i < k; i++) \n";
+//        std::cout << "Start: for (int i = 0; i < k; i++) \n";
         // rotate rows and columns k and l
         for (int i = 0; i < k; i++)
         {
-            //std::cout << "("<< i << ", " << k << ")\n";
-            //std::cout << "("<< i << ", " << l << ")\n";
+            std::cout << "("<< i << ", " << k << ")\n";
+            std::cout << "("<< i << ", " << l << ")\n";
             rotate(S,i,k,i,l, c, s);
         }
 
@@ -772,8 +816,8 @@ void jacobi(matrix& S, double e[N], matrix& E)
 
         for (int i = k +1; i < l; i++)
         {
-            //std::cout << "("<< k << ", " << i << ")\n";
-            //std::cout << "("<< i << ", " << l << ")\n";
+            std::cout << "("<< k << ", " << i << ")\n";
+            std::cout << "("<< i << ", " << l << ")\n";
             rotate(S,k,i,i,l, c, s);
         }
 
@@ -783,8 +827,8 @@ void jacobi(matrix& S, double e[N], matrix& E)
 
         for (int i = l + 1; i < N; i++)
         {
-            //std::cout << "("<< k << ", " << i << ")\n";
-            //std::cout << "("<< l << ", " << i << ")\n";
+            std::cout << "("<< k << ", " << i << ")\n";
+            std::cout << "("<< l << ", " << i << ")\n";
             rotate(S,k,i,l,i, c, s);
         }
 
@@ -840,8 +884,9 @@ void jacobi(matrix& S, double e[N], matrix& E)
         //ind[k] =  maxind(S,k);
         //ind[l] =  maxind(S,l);
 
-        //std::cout << "k = "<< k << " l = " << l << "\n";
+//        std::cout << "k = "<< k << " l = " << l << "\n";
 
+        time1 = getTime();
         if ( (k < N - 2) && l < N - 1)
         {
             k = k;
@@ -866,6 +911,7 @@ void jacobi(matrix& S, double e[N], matrix& E)
                     std::cout <<"Error no condition was entered\n";
             }
         }
+        time2 += getTime() - time1;
 
         count++;
     }
@@ -1082,6 +1128,7 @@ int main(int argc, char *argv[])
     //if (readMatrixFromFile(mat, "500b.txt") == false)
     //if (readMatrixFromFile(mat, "102b.txt") == false)
     //if (readMatrixFromFile(mat, "222.txt") == false)
+    if (readMatrixFromFile(mat, "08b.txt") == false)
     //if (readMatrixFromFile(mat, "6b.txt") == false)
     //if (readMatrixFromFile(mat, "5002.txt") == false)
     //if (readMatrixFromFile(mat, "100b.txt") == false)
@@ -1093,7 +1140,9 @@ int main(int argc, char *argv[])
     //if (readMatrixFromFile(mat, "1000b.txt") == false)
     //if (readMatrixFromFile(mat, "900b.txt") == false)
     //if (readMatrixFromFile(mat, "800b.txt") == false)
-    if (readMatrixFromFile(mat, "500d.txt") == false)
+    //if (readMatrixFromFile(mat, "ert4.txt") == false)
+    //if (readMatrixFromFile(mat, "ert2.txt") == false)
+    //if (readMatrixFromFile(mat, "500d.txt") == false)
     //if (readMatrixFromFile(mat, "450b.txt") == false)
     //if (readMatrixFromFile(mat, "400b.txt") == false)
     //if (readMatrixFromFile(mat, "395b.txt") == false)
@@ -1112,16 +1161,16 @@ int main(int argc, char *argv[])
 
     std::vector<Kpairs> kPairs = genrateMartixPoints(N);
 
-//    for (int i = 0; i < kPairs.size(); i++)
-//    {
-//        std::vector<matrixPoint>& matrixPoints = kPairs[i].matrixPoints;
+    for (int i = 0; i < kPairs.size(); i++)
+    {
+        std::vector<matrixPoint>& matrixPoints = kPairs[i].matrixPoints;
 
-//        for (int j = 0; j < matrixPoints.size(); j++)
-//        {
-//            std::cout << matrixPoints[j].k << " " <<  matrixPoints[j].l << "\n";
-//        }
-//        std::cout<<"---------------------\n";
-//    }
+        for (int j = 0; j < matrixPoints.size(); j++)
+        {
+            std::cout << matrixPoints[j].k << " " <<  matrixPoints[j].l << "\n";
+        }
+        std::cout<<"---------------------\n";
+    }
 
 //    for (int i = 0; i < N; i++)
 //    {
@@ -1141,9 +1190,9 @@ int main(int argc, char *argv[])
 
     double t = getTime();
 
-    jacobiNeoMkl(mat, e, E,kPairs);
+    //jacobiNeoMkl(mat, e, E,kPairs);
     //jacobiMkl(mat, e, E);
-    //jacobi(mat, e, E);
+    jacobi(mat, e, E);
     //neoJacobi(mat, e, E, kPairs);
 
     std::cout << "Time: " << getTime () - t << "\n\n";
